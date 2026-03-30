@@ -3,6 +3,7 @@ import cv2
 import json
 import math
 import numpy as np
+np.float = float
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
@@ -78,30 +79,34 @@ def convert_to_coco_format(pose_entries, all_keypoints):
     return coco_keypoints, scores
 
 
-def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(128, 128, 128), img_scale=1/256):
+def infer(net, img, scales, base_height, base_width, stride, quantization = torch.float32, pad_value=(0, 0, 0), img_mean=(128, 128, 128), img_scale=1/256):
     normed_img = normalize(img, img_mean, img_scale)
     height, width, _ = normed_img.shape
-    scales_ratios = [scale * base_height / float(height) for scale in scales]
+    scales_ratios = [min(base_height / height, base_width / width)]
+    
     avg_heatmaps = np.zeros((height, width, 19), dtype=np.float32)
     avg_pafs = np.zeros((height, width, 38), dtype=np.float32)
 
     for ratio in scales_ratios:
-        scaled_img = cv2.resize(normed_img, (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_CUBIC)
-        min_dims = [base_height, max(scaled_img.shape[1], base_height)]
+        scaled_img = cv2.resize(normed_img, (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_LINEAR)
+        min_dims = [base_height, base_width]
         padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
 
         tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float().cuda()
-        stages_output = net(tensor_img)
+        with torch.no_grad():
+            with torch.amp.autocast(device_type='cuda', dtype=quantization):
+                stages_output = net(tensor_img.to(quantization))
+        #stages_output = net(tensor_img)
 
         stage2_heatmaps = stages_output[-2]
-        heatmaps = np.transpose(stage2_heatmaps.squeeze().cpu().data.numpy(), (1, 2, 0))
+        heatmaps = np.transpose(stage2_heatmaps.squeeze().float().cpu().data.numpy(), (1, 2, 0))
         heatmaps = cv2.resize(heatmaps, (0, 0), fx=stride, fy=stride, interpolation=cv2.INTER_CUBIC)
         heatmaps = heatmaps[pad[0]:heatmaps.shape[0] - pad[2], pad[1]:heatmaps.shape[1] - pad[3]:, :]
         heatmaps = cv2.resize(heatmaps, (width, height), interpolation=cv2.INTER_CUBIC)
         avg_heatmaps = avg_heatmaps + heatmaps / len(scales_ratios)
 
         stage2_pafs = stages_output[-1]
-        pafs = np.transpose(stage2_pafs.squeeze().cpu().data.numpy(), (1, 2, 0))
+        pafs = np.transpose(stage2_pafs.squeeze().float().cpu().data.numpy(), (1, 2, 0))
         pafs = cv2.resize(pafs, (0, 0), fx=stride, fy=stride, interpolation=cv2.INTER_CUBIC)
         pafs = pafs[pad[0]:pafs.shape[0] - pad[2], pad[1]:pafs.shape[1] - pad[3], :]
         pafs = cv2.resize(pafs, (width, height), interpolation=cv2.INTER_CUBIC)
@@ -110,9 +115,10 @@ def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(
     return avg_heatmaps, avg_pafs
 
 
-def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False):
+def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False, quantization = torch.float32):
     net = net.cuda().eval()
-    base_height = 368
+    base_height = 544
+    base_width = 968
     scales = [1]
     if multiscale:
         scales = [0.5, 1.0, 1.5, 2.0]
@@ -124,7 +130,7 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
         file_name = sample['file_name']
         img = sample['img']
 
-        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, stride)
+        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, base_width, stride, quantization)
 
         total_keypoints_num = 0
         all_keypoints_by_type = []
@@ -169,10 +175,22 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint-path', type=str, required=True, help='path to the checkpoint')
     parser.add_argument('--multiscale', action='store_true', help='average inference results over multiple scales')
     parser.add_argument('--visualize', action='store_true', help='show keypoints')
+    parser.add_argument('--num_refinement_stages', type=int, help='preformance')
+    parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8'])
     args = parser.parse_args()
+    dtype = torch.float32
+    if args.quantization == 'fp32':
+        dtype = torch.float32
+    elif args.quantization == 'fp16':
+        dtype = torch.float16
+    elif args.quantization == 'int8':
+        dtype = torch.int8
 
-    net = PoseEstimationWithMobileNet()
+    net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
+    #net = PoseEstimationWithMobileNet()
     checkpoint = torch.load(args.checkpoint_path)
     load_state(net, checkpoint)
 
-    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize)
+    net = net.cuda().eval()
+  
+    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize, dtype)
