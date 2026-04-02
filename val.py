@@ -79,7 +79,7 @@ def convert_to_coco_format(pose_entries, all_keypoints):
     return coco_keypoints, scores
 
 
-def infer(net, img, scales, base_height, base_width, stride, quantization = torch.float32, pad_value=(0, 0, 0), img_mean=(128, 128, 128), img_scale=1/256):
+def infer(net, img, scales, base_height, base_width, stride, quantization_type='fp32', pad_value=(0, 0, 0), img_mean=(128, 128, 128), img_scale=1/256):
     normed_img = normalize(img, img_mean, img_scale)
     height, width, _ = normed_img.shape
     scales_ratios = [min(base_height / height, base_width / width)]
@@ -87,24 +87,24 @@ def infer(net, img, scales, base_height, base_width, stride, quantization = torc
     avg_heatmaps = np.zeros((height, width, 19), dtype=np.float32)
     avg_pafs = np.zeros((height, width, 38), dtype=np.float32)
 
-    is_quantized = args.quantization == 'int8'
-    device = torch.device('cpu') if is_quantized else torch.device('cuda')
+    if quantization_type == 'int8':
+        device = torch.device('cpu')
+        input_dtype = torch.float32 # Quantized models take float32 and quantize internally via QuantStub
+    else:
+        device = torch.device('cuda')
+        input_dtype = torch.float16 if quantization_type == 'fp16' else \
+                      torch.bfloat16 if quantization_type == 'bf16' else torch.float32
     
     for ratio in scales_ratios:
         scaled_img = cv2.resize(normed_img, (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_LINEAR)
         min_dims = [base_height, base_width]
         padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
 
-        # Force CPU and Float32 for INT8 mode
-        device = torch.device('cpu') if args.quantization == 'int8' else torch.device('cuda')
-        tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).to(device).float()
-        if is_quantized:
-                # No autocast for INT8, and no .to(dtype) needed for the input usually
-                stages_output = net(tensor_img)
-        else:
-            with torch.amp.autocast(device_type='cuda', dtype=quantization):
-                stages_output = net(tensor_img)
-
+        tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).to(device).to(input_dtype)
+        
+        with torch.no_grad():
+            stages_output = net(tensor_img)
+            
         stage2_heatmaps = stages_output[-2]
         heatmaps = np.transpose(stage2_heatmaps.squeeze().float().cpu().data.numpy(), (1, 2, 0))
         heatmaps = cv2.resize(heatmaps, (0, 0), fx=stride, fy=stride, interpolation=cv2.INTER_CUBIC)
@@ -121,8 +121,8 @@ def infer(net, img, scales, base_height, base_width, stride, quantization = torc
 
     return avg_heatmaps, avg_pafs
 
-def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False, quantization = torch.float32):
-    net = net.cuda().eval()
+def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False, quantization_type='fp32'):
+    net = net.eval()
     base_height = 544
     base_width = 968
     scales = [1]
@@ -136,7 +136,7 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
         file_name = sample['file_name']
         img = sample['img']
 
-        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, base_width, stride, quantization)
+        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, base_width, stride, quantization_type)
 
         total_keypoints_num = 0
         all_keypoints_by_type = []
@@ -171,6 +171,42 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
 
     run_coco_eval(labels, output_name)
 
+def load_model(args, device):
+    # Initialize base model
+    net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
+    
+    if args.quantization == 'int8':
+        torch.backends.quantized.engine = 'fbgemm'
+        net.eval()
+        net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+        
+        # Prepare the model structure
+        torch.quantization.prepare(net, inplace=True)
+        
+        # DO NOT convert yet. Load the state dict first if it contains 
+        # the calibration stats/quantized weights.
+        checkpoint = torch.load(args.checkpoint_path, map_location='cpu', weights_only=False)
+        state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
+        
+        torch.quantization.convert(net, inplace=True) 
+        net.load_state_dict(state_dict, strict=False)
+
+        print("Loaded and converted INT8 model successfully.")
+        return net
+    else:
+        # Load standard weights
+        checkpoint = torch.load(args.checkpoint_path, map_location=device, weights_only=False)
+        load_state(net, checkpoint)
+        net = net.to(device)
+
+        if args.quantization == 'fp16':
+            net.half()
+            print("Running in FP16 (Half Precision).")
+        elif args.quantization == 'bf16':
+            net.to(torch.bfloat16)
+            print("Running in BF16 (BFloat16).")
+        
+        return net.eval()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -184,44 +220,14 @@ if __name__ == '__main__':
     parser.add_argument('--num-refinement-stages', type=int, help='preformance')
     parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'bf16'])
     args = parser.parse_args()
-    dtype = torch.float32
-    if args.quantization == 'fp32':
-        dtype = torch.float32
-    elif args.quantization == 'fp16':
-        dtype = torch.float16
-    elif args.quantization == 'bf16':
-        dtype = torch.bfloat16
-    elif args.quantization == 'int8':
-        dtype = torch.int8
+    # New logic
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
-    if args.quantization == 'int8':
-        # 1. Set the engine to fbgemm (for x86 CPUs)
-        # Use 'qnnpack' ONLY if you are on an ARM/Mobile device
-        torch.backends.quantized.engine = 'fbgemm' 
-        
-        # 2. Use the matching qconfig
-        net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-        
-        # 3. Prepare and Convert
-        net_prepared = torch.quantization.prepare(net)
-        net_quantized = torch.quantization.convert(net_prepared)
-        
-        # 4. Filter and Load weights as before
-        checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
-        full_state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
-        model_dict = net_quantized.state_dict()
-        filtered_dict = {k: v for k, v in full_state_dict.items() if k in model_dict}
-        
-        net_quantized.load_state_dict(filtered_dict)
-        net = net_quantized
-        print(f"Loaded INT8 weights for {args.num_refinement_stages} stages using FBGEMM.")
-    else:
-        # Standard FP32 loading
-        checkpoint = torch.load(args.checkpoint_path)
-        load_state(net, checkpoint)
-        net = net.cuda()
+    # 2. Use your helper function to handle the complex INT8/FP16/BF16 loading
+    net = load_model(args, device)
+    print("-*------------------------------------")
+    print(net)
 
-    net.eval()
-  
-    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize, dtype)
+    # 3. Start evaluation, passing the string flag 'args.quantization'
+    evaluate(args.labels, args.output_name, args.images_folder, net, 
+             args.multiscale, args.visualize, args.quantization)
