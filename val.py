@@ -178,18 +178,20 @@ def load_model(args, device):
     if args.quantization == 'int8':
         torch.backends.quantized.engine = 'fbgemm'
         net.eval()
+        net.fuse_model()
         net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-        
-        # Prepare the model structure
+
+        # Prepare the model structure (inserts observers)
         torch.quantization.prepare(net, inplace=True)
-        
-        # DO NOT convert yet. Load the state dict first if it contains 
-        # the calibration stats/quantized weights.
+
+        # Load calibrated state dict (saved after running calibration data
+        # through the prepared model, before convert)
         checkpoint = torch.load(args.checkpoint_path, map_location='cpu', weights_only=False)
         state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
-        
-        torch.quantization.convert(net, inplace=True) 
         net.load_state_dict(state_dict, strict=False)
+
+        # Convert calibrated observers to quantized ops
+        torch.quantization.convert(net, inplace=True)
 
         print("Loaded and converted INT8 model successfully.")
         return net

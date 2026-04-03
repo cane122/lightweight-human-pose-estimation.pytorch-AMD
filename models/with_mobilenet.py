@@ -121,3 +121,30 @@ class PoseEstimationWithMobileNet(nn.Module):
                 refinement_stage(torch.cat([backbone_features, stages_output[-2], stages_output[-1]], dim=1)))
 
         return stages_output
+
+    def fuse_model(self):
+        from torch.ao.quantization import fuse_modules
+
+        for m in self.modules():
+            if not isinstance(m, nn.Sequential):
+                continue
+            children = list(m.named_children())
+            i = 0
+            while i < len(children):
+                name_i, mod_i = children[i]
+                if not isinstance(mod_i, nn.Conv2d):
+                    i += 1
+                    continue
+                # Try Conv + BN + ReLU
+                if (i + 2 < len(children)
+                        and isinstance(children[i + 1][1], nn.BatchNorm2d)
+                        and isinstance(children[i + 2][1], nn.ReLU)):
+                    fuse_modules(m, [name_i, children[i + 1][0], children[i + 2][0]], inplace=True)
+                    i += 3
+                # Try Conv + ReLU
+                elif (i + 1 < len(children)
+                      and isinstance(children[i + 1][1], nn.ReLU)):
+                    fuse_modules(m, [name_i, children[i + 1][0]], inplace=True)
+                    i += 2
+                else:
+                    i += 1
