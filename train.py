@@ -20,6 +20,10 @@ cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)  # To prevent freeze of DataLoader
 
 
+def run_val(val_labels, val_output_name, val_images_folder, net, quantization_type='fp32'):
+    evaluate(val_labels, val_output_name, val_images_folder, net, quantization_type=quantization_type)
+
+
 def train(prepared_train_labels, train_images_folder, num_refinement_stages, base_lr, batch_size, batches_per_iter,
           num_workers, checkpoint_path, weights_only, from_mobilenet, checkpoints_folder, log_after,
           val_labels, val_images_folder, val_output_name, checkpoint_after, val_after):
@@ -127,7 +131,7 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                            snapshot_name)
             if num_iter % val_after == 0:
                 print('Validation...')
-                evaluate(val_labels, val_output_name, val_images_folder, net)
+                run_val(val_labels, val_output_name, val_images_folder, net)
                 net.train()
 
 
