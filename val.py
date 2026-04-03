@@ -8,7 +8,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 import torch
-
+torch.set_num_threads(16)
 from datasets.coco import CocoValDataset
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
@@ -104,7 +104,7 @@ def infer(net, img, scales, base_height, base_width, stride, quantization_type='
         
         with torch.no_grad():
             stages_output = net(tensor_img)
-            
+        
         stage2_heatmaps = stages_output[-2]
         heatmaps = np.transpose(stage2_heatmaps.squeeze().float().cpu().data.numpy(), (1, 2, 0))
         heatmaps = cv2.resize(heatmaps, (0, 0), fx=stride, fy=stride, interpolation=cv2.INTER_CUBIC)
@@ -132,10 +132,13 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
 
     dataset = CocoValDataset(labels, images_folder)
     coco_result = []
-    for sample in dataset:
+    for i, sample in enumerate(dataset):
         file_name = sample['file_name']
         img = sample['img']
-
+        
+        if i % 10 == 0:
+            print(f"Processing image {i}/5000: {file_name}")
+        
         avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, base_width, stride, quantization_type)
 
         total_keypoints_num = 0
@@ -165,37 +168,41 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
             key = cv2.waitKey()
             if key == 27:  # esc
                 return
-
+    print(f"\n--- Inference Complete. Writing results to {output_name}... ---")
     with open(output_name, 'w') as f:
         json.dump(coco_result, f, indent=4)
-
+    print("--- Starting COCO Evaluation (This may take several minutes on CPU)... ---")
     run_coco_eval(labels, output_name)
+    print("--- Evaluation Finished! ---")
 
 def load_model(args, device):
     # Initialize base model
     net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
-    
+    net.eval()
     if args.quantization == 'int8':
         torch.backends.quantized.engine = 'fbgemm'
-        net.eval()
         net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
         
-        # Prepare the model structure
+        net.fuse_model()
+            
+        # 3. Prepare and convert WITHOUT dummy noise calibration here
+        # This creates the quantized layer structures needed to hold the weights
         torch.quantization.prepare(net, inplace=True)
+        torch.quantization.convert(net, inplace=True)
         
-        # DO NOT convert yet. Load the state dict first if it contains 
-        # the calibration stats/quantized weights.
-        checkpoint = torch.load(args.checkpoint_path, map_location='cpu', weights_only=False)
-        state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
+        # 4. NOW load the weights into the quantized structure
+        checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
+        # If you saved using your calibration script, use the 'state_dict' key
+        if 'state_dict' in checkpoint:
+            net.load_state_dict(checkpoint['state_dict'])
+        else:
+            net.load_state_dict(checkpoint)
         
-        torch.quantization.convert(net, inplace=True) 
-        net.load_state_dict(state_dict, strict=False)
-
-        print("Loaded and converted INT8 model successfully.")
+        print("Loaded calibrated INT8 weights successfully.")
         return net
     else:
         # Load standard weights
-        checkpoint = torch.load(args.checkpoint_path, map_location=device, weights_only=False)
+        checkpoint = torch.load(args.checkpoint_path, map_location=device)
         load_state(net, checkpoint)
         net = net.to(device)
 
@@ -221,12 +228,13 @@ if __name__ == '__main__':
     parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'bf16'])
     args = parser.parse_args()
     # New logic
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if args.quantization == 'int8':
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 2. Use your helper function to handle the complex INT8/FP16/BF16 loading
     net = load_model(args, device)
-    print("-*------------------------------------")
-    print(net)
 
     # 3. Start evaluation, passing the string flag 'args.quantization'
     evaluate(args.labels, args.output_name, args.images_folder, net, 
