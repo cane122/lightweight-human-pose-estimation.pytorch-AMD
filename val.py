@@ -207,7 +207,7 @@ def load_model(args, device):
         print("Running in BF16 (BFloat16).")
     
     # Optional: Compile for extra speedup (Torch 2.0+)
-    # net = torch.compile(net, mode="reduce-overhead")
+    net = torch.compile(net, mode="reduce-overhead")
     
     return net.eval()
 
@@ -239,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--multiscale', action='store_true', help='average inference results over multiple scales')
     parser.add_argument('--visualize', action='store_true', help='show keypoints')
     parser.add_argument('--num-refinement-stages', type=int, help='preformance')
-    parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'bf16', 'mixed_fp32', 'mixed_fp16'])
+    parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'int8_dynamic', 'bf16', 'mixed_fp32', 'mixed_fp16'])
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

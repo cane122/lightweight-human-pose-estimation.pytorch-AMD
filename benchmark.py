@@ -180,7 +180,7 @@ def create_args(mode, refinement_stages):
 if __name__ == '__main__':
     target_refinements = [1, 2]
     target_modes = ['fp32', 'fp16', 'bf16', 'int8', 'mixed_fp32', 'mixed_fp16']
-    target_modes = ['int8']
+    target_modes = ['int8', 'mixed_fp16']
     
     for ref in target_refinements:
         print(f"\n{'='*20}")
