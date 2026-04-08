@@ -13,7 +13,7 @@ from datasets.coco import CocoValDataset
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
-
+import torch.ao.quantization as quantization
 base_height = 544
 base_width = 968
 
@@ -89,15 +89,10 @@ def infer(net, img, scales, base_height, base_width, stride, quantization_type='
     avg_heatmaps = np.zeros((height, width, 19), dtype=np.float32)
     avg_pafs = np.zeros((height, width, 38), dtype=np.float32)
 
-    if quantization_type in ['int8', 'mixed_fp32', 'mixed_fp16']:
-        device = torch.device('cpu')
-        input_dtype = torch.float32 
-        if quantization_type == 'mixed_fp16':
-            input_dtype = torch.float16
-    else:
-        device = torch.device('cuda')
-        input_dtype = torch.float16 if quantization_type == 'fp16' else \
-                      torch.bfloat16 if quantization_type == 'bf16' else torch.float32
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # torchao handles the internal logic; we just need a standard float32 or float16 input
+    input_dtype = torch.float16 if quantization_type == 'fp16' else torch.float32
     
     for ratio in scales_ratios:
         scaled_img = cv2.resize(normed_img, (0, 0), fx=ratio, fy=ratio, interpolation=cv2.INTER_LINEAR)
@@ -177,51 +172,44 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
     run_coco_eval(labels, output_name)
     print("--- Evaluation Finished! ---")
 
+import torch
+from torchao.quantization import quantize_, Int8WeightOnlyConfig, Int8DynamicActivationInt8WeightConfig
+
 def load_model(args, device):
     # Initialize base model
     net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
     net.eval()
-    if args.quantization in ['int8', 'mixed_fp32', 'mixed_fp16']:
-        checkpoint = torch.load("models/checkpoint_iter_370000.pth", map_location=device)
-        load_state(net, checkpoint)
-        net.eval()
-        torch.backends.quantized.engine = 'fbgemm'
-        net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-        
-        net.fuse_model()
-        if args.quantization in ['mixed_fp32', 'mixed_fp16']:
-            layers_to_skip = [net.model[0], net.model[1], net.model[2]]
-            net.is_mixed = True
-            for layer in layers_to_skip:
-                layer.qconfig = None 
+    
+    # Load standard weights first
+    checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
+    load_state(net, checkpoint)
+    net = net.to(device)
 
+    print(f"--- Applying torchcao quantization: {args.quantization} ---")
 
-        torch.quantization.prepare(net, inplace=True)
+    if args.quantization == 'int8':
+        # apply int8 weight-only quantization
+        # This is fast and doesn't require a calibration dataset
+        quantize_(net, Int8WeightOnlyConfig())
+        print("Applied torchcao int8_weight_only quantization.")
 
-        calibrate_model(net, args)
+    elif args.quantization == 'int8_dynamic':
+        # More advanced: dynamic quantization for activations + weights
+        quantize_(net, Int8DynamicActivationInt8WeightConfig())
+        print("Applied torchcao int8_dynamic_activation_int8_weight quantization.")
 
-        torch.quantization.convert(net, inplace=True)
+    elif args.quantization == 'fp16':
+        net.half()
+        print("Running in FP16 (Half Precision).")
 
-        if args.quantization == 'mixed_fp16':
-            print("--- Manually casting first 3 layers to FP16 ---")
-            for layer in layers_to_skip:
-                layer.half()
-        print("Loaded calibrated INT8 weights successfully.")
-        return net
-    else:
-        # Load standard weights
-        checkpoint = torch.load(args.checkpoint_path, map_location=device)
-        load_state(net, checkpoint)
-        net = net.to(device)
-        # Sta treba da kucam
-        if args.quantization == 'fp16':
-            net.half()
-            print("Running in FP16 (Half Precision).")
-        elif args.quantization == 'bf16':
-            net.to(torch.bfloat16)
-            print("Running in BF16 (BFloat16).")
-        
-        return net.eval()
+    elif args.quantization == 'bf16':
+        net.to(torch.bfloat16)
+        print("Running in BF16 (BFloat16).")
+    
+    # Optional: Compile for extra speedup (Torch 2.0+)
+    # net = torch.compile(net, mode="reduce-overhead")
+    
+    return net.eval()
 
 def calibrate_model(model, args):
     """Helper to run a few images through the model to set quantization scales"""
@@ -253,11 +241,8 @@ if __name__ == '__main__':
     parser.add_argument('--num-refinement-stages', type=int, help='preformance')
     parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'bf16', 'mixed_fp32', 'mixed_fp16'])
     args = parser.parse_args()
-    # New logic
-    if args.quantization == 'int8':
-        device = torch.device('cpu')
-    else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
 
     net = load_model(args, device)
