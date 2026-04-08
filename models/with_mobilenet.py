@@ -91,6 +91,7 @@ class RefinementStage(nn.Module):
 class PoseEstimationWithMobileNet(nn.Module):
     def __init__(self, num_refinement_stages=1, num_channels=128, num_heatmaps=19, num_pafs=38):
         super().__init__()
+        self.is_mixed = False
         self.quant = QuantStub()
         self.dequant = DeQuantStub()
         self.model = nn.Sequential(
@@ -116,10 +117,17 @@ class PoseEstimationWithMobileNet(nn.Module):
             self.refinement_stages.append(RefinementStage(num_channels + num_heatmaps + num_pafs, num_channels,
                                                           num_heatmaps, num_pafs))
 
-    def forward(self, x):
-        x = self.quant(x)
-
-        backbone_features = self.model(x)
+    def forward(self, backbone_features):
+        if self.is_mixed:
+            backbone_features = self.model[0](backbone_features)
+            backbone_features = self.model[1](backbone_features)
+            backbone_features = self.model[2](backbone_features).float()
+            backbone_features = self.quant(backbone_features)
+            for i in range(3, len(self.model)):
+                backbone_features = self.model[i](backbone_features)
+        else:
+            backbone_features = self.quant(backbone_features)
+            backbone_features = self.model(backbone_features)
         backbone_features = self.cpm(backbone_features)
 
         stages_output = self.initial_stage(backbone_features)
