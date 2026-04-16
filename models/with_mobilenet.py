@@ -135,7 +135,8 @@ class PoseEstimationWithMobileNet(nn.Module):
             stages_output.extend(
                 refinement_stage(self.cat_op.cat([backbone_features, stages_output[-2], stages_output[-1]], dim=1)))
 
-        return [self.dequant(out) for out in stages_output]
+        final_results = [stages_output[-2], stages_output[-1]]
+        return [self.dequant(out) for out in final_results]
 
     def fuse_model(self):
         from torch.ao.quantization import fuse_modules

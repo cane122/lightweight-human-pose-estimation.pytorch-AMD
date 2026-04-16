@@ -6,7 +6,6 @@ import numpy as np
 np.float = float
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-
 import torch
 torch.set_num_threads(16)
 from datasets.coco import CocoValDataset
@@ -173,16 +172,15 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
     print(f"\n--- Inference Complete. Writing results to {output_name}... ---")
     with open(output_name, 'w') as f:
         json.dump(coco_result, f, indent=4)
-    print("--- Starting COCO Evaluation (This may take several minutes on CPU)... ---")
+    print("--- Starting COCO Evaluation ---")
     run_coco_eval(labels, output_name)
     print("--- Evaluation Finished! ---")
 
-def load_model(args, device):
-    # Initialize base model
+def load_model(args):
     net = PoseEstimationWithMobileNet(num_refinement_stages=args.num_refinement_stages)
     net.eval()
     if args.quantization in ['int8', 'mixed_fp32', 'mixed_fp16']:
-        checkpoint = torch.load("models/checkpoint_iter_370000.pth", map_location=device)
+        checkpoint = torch.load("models/checkpoint_iter_370000.pth", map_location=torch.device('cpu'))
         load_state(net, checkpoint)
         net.eval()
         torch.backends.quantized.engine = 'fbgemm'
@@ -195,11 +193,8 @@ def load_model(args, device):
             for layer in layers_to_skip:
                 layer.qconfig = None 
 
-
         torch.quantization.prepare(net, inplace=True)
-
         calibrate_model(net, args)
-
         torch.quantization.convert(net, inplace=True)
 
         if args.quantization == 'mixed_fp16':
@@ -209,11 +204,9 @@ def load_model(args, device):
         print("Loaded calibrated INT8 weights successfully.")
         return net
     else:
-        # Load standard weights
-        checkpoint = torch.load(args.checkpoint_path, map_location=device)
+        checkpoint = torch.load(args.checkpoint_path, map_location=torch.device('cuda'))
         load_state(net, checkpoint)
-        net = net.to(device)
-        # Sta treba da kucam
+        net = net.to(torch.device('cuda'))
         if args.quantization == 'fp16':
             net.half()
             print("Running in FP16 (Half Precision).")
@@ -224,7 +217,6 @@ def load_model(args, device):
         return net.eval()
 
 def calibrate_model(model, args):
-    """Helper to run a few images through the model to set quantization scales"""
     print("--- Starting Calibration (Static PTQ) ---")
     dataset = CocoValDataset(args.labels, args.images_folder)
     with torch.no_grad():
@@ -240,6 +232,14 @@ def calibrate_model(model, args):
                 print(f"Calibrating image {i}/135...")
     print("--- Calibration Complete ---")
 
+def export_to_onnx(net, output_path="pose_model.onnx"):
+    net.eval().cpu()
+    dummy_input = torch.randn(1, 3, base_height, base_width) 
+    torch.onnx.export(net, dummy_input, output_path, 
+                      input_names=['input'], 
+                      output_names=['stage_heatmaps', 'stage_pafs'],
+                      opset_version=11)
+    print(f"Model exported to {output_path}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -253,17 +253,9 @@ if __name__ == '__main__':
     parser.add_argument('--num-refinement-stages', type=int, help='preformance')
     parser.add_argument('--quantization', type=str, default='fp32', choices=['fp32', 'fp16', 'int8', 'bf16', 'mixed_fp32', 'mixed_fp16'])
     args = parser.parse_args()
-    # New logic
-    if args.quantization == 'int8':
-        device = torch.device('cpu')
-    else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
 
-    net = load_model(args, device)
-    
-    print("--- Verifying Model Layers after Fusion ---")
-  
+    net = load_model(args)
+    #export_to_onnx(net, output_path="pose_model.onnx")
     evaluate(args.labels, args.output_name, args.images_folder, net, 
              args.multiscale, args.visualize, args.quantization)
 
