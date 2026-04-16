@@ -1,0 +1,29 @@
+-------------------refinement 1------------------
+DONE (t=0.04s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.428
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.689
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.442
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.453
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.414
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.482
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.730
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.498
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.470
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.502
+--- Evaluation Finished! ---
+
+-------------refinement 2----------------------
+
+Accumulating evaluation results...
+DONE (t=0.03s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.453
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.705
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.471
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.464
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.455
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.508
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.740
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.527
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.482
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.546
+--- Evaluation Finished! ---

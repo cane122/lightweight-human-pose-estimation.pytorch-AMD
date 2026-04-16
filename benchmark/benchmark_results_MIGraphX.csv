@@ -1,0 +1,13 @@
+Stages,Mode,Latency (ms),Throughput (FPS),Power (W),Compiled
+1,fp32,12.18,82.07,83.63,False
+1,fp16,6.74,148.31,62.63,False
+1,bf16,7.84,127.63,70.06,False
+1,int8,6.67,149.81,66.06,False
+1,mixed_fp32,12.68,78.84,83.66,False
+1,mixed_fp16,12.82,78.01,83.85,False
+2,fp32,12.65,79.06,84.26,False
+2,fp16,7.49,133.55,62.24,False
+2,bf16,7.86,127.21,71.45,False
+2,int8,7.05,141.80,66.05,False
+2,mixed_fp32,12.98,77.05,84.63,False
+2,mixed_fp16,13.04,76.69,84.03,False

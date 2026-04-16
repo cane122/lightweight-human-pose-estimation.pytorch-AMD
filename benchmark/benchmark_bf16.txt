@@ -1,0 +1,29 @@
+--------------- 1 refinement --------------------
+Evaluate annotation type *keypoints*
+DONE (t=4.30s).
+Accumulating evaluation results...
+DONE (t=0.19s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.123
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.318
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.077
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.192
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.054
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.147
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.357
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.104
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.197
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.079
+ -------------- 2 refinement -----------------------
+ Accumulating evaluation results...
+DONE (t=0.22s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.116
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.295
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.073
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.190
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.036
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.138
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.333
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.099
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.194
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.062
+--- Evaluation Finished! ---

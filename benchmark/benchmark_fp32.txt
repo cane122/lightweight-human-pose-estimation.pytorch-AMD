@@ -1,0 +1,40 @@
+
+----------Refinement 1--------------------------
+Running test for keypoints results.
+loading annotations into memory...
+Done (t=0.14s)
+creating index...
+index created!
+Loading and preparing results...
+DONE (t=0.16s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *keypoints*
+DONE (t=1.42s).
+Accumulating evaluation results...
+DONE (t=0.03s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.436
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.695
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.458
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.458
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.423
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.490
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.732
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.512
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.476
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.513
+0.0002, Std: 0.0023
+---------Refinement 2----------------------------
+DONE (t=0.05s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.458
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.698
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.480
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.469
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.461
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.513
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.740
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.537
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.487
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.554
+--- Evaluation Finished! ---
