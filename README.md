@@ -8,7 +8,7 @@ Compared to the original repository, the following changes have been implemented
 
 1. ROCm 7.2+ Port: Migrated to Python 3.10+ and the latest PyTorch ROCm binaries.
 
-2. MIGraphX Backend: Model compiled specifically for RDNA 3.5, jumping from ~8 FPS (Native) to ~205 FPS.
+2. MIGraphX Backend: Model compiled specifically for RDNA 3.5, jumping from ~8 FPS (Native) to ~215 FPS.
 
 3. Zero-Copy Memory Opt: Reduced 6x redundant PCIe copies between CPU/GPU to 2x. Intermediate Heatmaps & PAFs remain in unified GPU memory.
 
@@ -20,12 +20,12 @@ Compared to the original repository, the following changes have been implemented
 
 Following extensive optimization, FP16 with 1 refinement stage emerged as the "sweet spot" for balancing throughput and precision on the Strix Halo architecture.
 
-|Optimization Phase |Backend |Precision|Throughput (FPS)|Latency (ms)| 
+|Optimization Phase |Backend |Precision|Throughput (FPS)|Avg. Power (Watts)| 
 |------------------|--------|---------|----------------|------------|
-|Initial Port      |PyTorch |FP16     |8.02               |124.66       |
-|MIGraphX          |MIGraphX|FP16     |148.31            |6.74       |
-|Improved model perf|MIGraphX|FP16     |200            |~4.5        |
-|Final (Exhaustive kernel)|MIGraphX|FP16     |205.18            |~4.5        |
+|Initial Port      |PyTorch |FP16     |8.02               |83.25W       |
+|MIGraphX          |MIGraphX|FP16     |148.31            |62.63W       |
+|Improved model perf|MIGraphX|FP16     |210.66            |55.44W       |
+|Final (Exhaustive kernel)|MIGraphX|FP16     |215.45            |48.44W       |
 
 ### Key Observations:
 
@@ -57,10 +57,10 @@ Accuracy testing demonstrated that FP16 maintains parity with FP32, whereas INT8
 Power Efficiency Final
 |Precision         |Avg. Power (Watts)|Throughput (FPS)|Efficiency (FPS/Watt)|
 |------------------|-------------|--------|-------------|
-|FP16 (1 Stage) |	50.04W	|205.18	|4.10
-|FP16 (2 Stages)|	43.25W|	207.02|	4.78
-
-
+|FP16 (1 Stage)    |	48.44W	 | 215.45 | 4.45
+|FP16 (2 Stages)   |	61.24W   | 207.02 |	3.38
+|FP16 (3 Stages)   |	66.85W   | 196.92 | 2.95
+|FP32 (1 Stage)    |   60.24W    | 95.75  | 1.59
 ### Performance Profiling
 
 Below is the execution profile for FP16 (1 refinement step) processing five 968 × 544 images. The profile highlights the dominance of fused MLIR kernels (convolution + ReLU) and the minimized impact of Device-to-Host (DtoH) copies.
@@ -92,19 +92,18 @@ Extract COCO 2017 into the <COCO_HOME> folder.
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements/requirements.txt
-    https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/3rd-party/pytorch-install.html
+    pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.2
     # Export ROCm Library Path (Crucial for MIGraphX/ROCm 7.2.0)
     export PYTHONPATH=$PYTHONPATH:/opt/rocm-7.2.0/lib
 ```
 3. Example validation script:
 ```
     python3 val.py \
-    --checkpoint-path models/int8_2ref.pth \
+    --checkpoint-path models/checkpoint_iter_370000.pth \
     --labels coco/annotations/person_keypoints_val2017.json \
     --images-folder coco/val2017 \
-    --quantization int8 \
-    --num-refinement-stages 2 \
-    --output-name detections_int8.json
+    --num-refinement-stages 1 \
+    --quantization fp32
 ```
 
 ## Citations and References

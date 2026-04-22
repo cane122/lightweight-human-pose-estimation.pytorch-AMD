@@ -85,7 +85,7 @@ def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=Fal
         device = torch.device('cuda')
 
     input_dtype = torch.float32
-    if args.quantization == 'fp16':
+    if args.quantization == 'fp16' or args.quantization == 'mixed_fp16':
         input_dtype = torch.float16
     elif args.quantization == 'bf16':
         input_dtype = torch.bfloat16
@@ -95,12 +95,12 @@ def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=Fal
 
     if compile_model and device.type == 'cuda':
         print("Compiling model with torch.compile...")
-        net = torch.compile(net, mode="max-autotune")
+        net = torch.compile(net)
 
     dummy_input = torch.randn(1, 3, base_height, base_width, dtype=input_dtype).to(device)
 
     print(f"Warming up...")
-    with torch.inference_mode():
+    with torch.no_grad():
         for _ in range(warm_up):
             _ = net(dummy_input)
         if device.type == 'cuda':
@@ -115,7 +115,7 @@ def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=Fal
             record_shapes=True,
             with_stack=True
         ) as prof:
-            with torch.inference_mode():
+            with torch.no_grad():
                 for _ in range(11):  # Matches schedule (1+5+5)
                     _ = net(dummy_input)
                     prof.step()
@@ -124,7 +124,7 @@ def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=Fal
     latencies = []
     powers = []
     start_benchmark = time.perf_counter()
-    with torch.inference_mode():
+    with torch.no_grad():
         for i in range(iterations):
             iter_start = time.perf_counter()
             _ = net(dummy_input)

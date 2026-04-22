@@ -13,15 +13,41 @@ import migraphx
 from datasets.coco import CocoValDataset
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.load_state import load_state
+from modules.keypoints import extract_keypoints, group_keypoints
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+from val import evaluate
 
 FINAL_RESULTS = []
 base_height = 544
 base_width = 968
 
+class MIGraphXWrapper:
+    def __init__(self, model):
+        self.model = model
+        self.input_name = 'input'
+        # Convert to string to safely compare (e.g., 'float_type' or 'half_type')
+        self.expected_type = str(self.model.get_parameter_shapes()[self.input_name].type())
+        print(f"DEBUG: MIGraphX expects input type: {self.expected_type}")
+
+    def eval(self): return self
+
+    def __call__(self, x):
+        n_input = x.cpu().numpy()
+        
+        if 'half' in self.expected_type:
+            n_input = n_input.astype(np.float16)
+        elif 'float' in self.expected_type:
+            n_input = n_input.astype(np.float32)
+
+        n_input = np.ascontiguousarray(n_input)
+        results = self.model.run({self.input_name: n_input})
+        return [torch.from_numpy(np.array(res)).float() for res in results]
+
 def load_model(args, device):
     onnx_path = "pose_model1.onnx"
 
-    compiled_model_path = f"pose_model1_{args.quantization}.mxr"
+    compiled_model_path = f"pose_model1_{args.quantization}_ref{args.num_refinement_stages}.mxr"
     if os.path.exists(compiled_model_path):
         print(f"--- Loading pre-compiled model from {compiled_model_path} ---")
         return migraphx.load(compiled_model_path)
@@ -38,7 +64,7 @@ def load_model(args, device):
     elif args.quantization == 'bf16':
         migraphx.quantize_bf16(model)
     
-    model.compile(target, exhaustive_tune=True, fast_math=False, offload_copy=True)
+    model.compile(target, exhaustive_tune=True)
     
     print(f"--- Saving compiled model to {compiled_model_path} ---")
     migraphx.save(model, compiled_model_path)
@@ -55,18 +81,15 @@ def get_gpu_power():
         return 0.0
 
 def run_inference(model, tensor_input):
-    if isinstance(model, migraphx.program):
-        n_input = tensor_input.cpu().numpy()
-        param_type = model.get_parameter_shapes()['input'].type()
+    n_input = tensor_input.cpu().numpy()
+    param_type = model.get_parameter_shapes()['input'].type()
+    
+    if param_type == 'half_type':
+        n_input = n_input.astype(np.float16)
         
-        if param_type == 'half_type':
-            n_input = n_input.astype(np.float16)
-            
-        return model.run({'input': n_input})
-    else:
-        return model(tensor_input)
-
-def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=False):
+    return model.run({'input': n_input})
+    
+def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=False, validate_accuracy=True):
     input_dtype = torch.float32
     device = torch.device('cuda')
 
@@ -95,9 +118,24 @@ def benchmark(args, iterations=100, warm_up=20, compile_model=True, profiler=Fal
                     _ = run_inference(net, dummy_input)
                     prof.step()
         print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-    
-    param_name = net.get_parameter_names()[0] # Usually 'input'
-    print(f"DEBUG: Model parameter name: {param_name}")
+
+    if validate_accuracy:
+        print(f"\n--- Starting Accuracy Validation (COCO) ---")
+        wrapped_model = MIGraphXWrapper(net)
+        output_json = f"results_{args.quantization}_ref{args.num_refinement_stages}.json"
+        
+        try:
+            # We pass the wrapped model which now handles the conversion
+            evaluate(
+                labels=args.labels, 
+                output_name=output_json, 
+                images_folder=args.images_folder, 
+                net=wrapped_model, 
+                quantization_type=args.quantization
+            )
+        except Exception as e:
+            print(f"EVALUATION FAILED: {e}")
+# ...
 
     input_arg = migraphx.argument(dummy_input.detach().cpu().numpy())
     run_params = {"input": input_arg}
@@ -151,10 +189,9 @@ def create_args(mode, refinement_stages):
 
 
 if __name__ == '__main__':
-    target_refinements = [1, 2]
-    target_modes = ['fp32', 'fp16', 'bf16', 'int8', 'mixed_fp32', 'mixed_fp16']
-    target_modes = ['fp16'] 
     target_refinements = [1]
+    target_modes = ['fp32']
+
     for ref in target_refinements:
         print(f"\n{'='*20}")
         print(f" TESTING REFINEMENT STAGES: {ref} ")
@@ -162,12 +199,12 @@ if __name__ == '__main__':
         for mode in target_modes:
             try:
                 args = create_args(mode, ref)
-                benchmark(args, iterations=50, compile_model=False, profiler=True)
+                benchmark(args, iterations=50, compile_model=False, profiler=True, validate_accuracy=False)
             except Exception as e:
                 print(f"FAILED [Mode: {mode}, Ref: {ref}]: {e}")
 
     print("\n" + "="*50)
-    print(f"{'STAGES':<8} | {'MODE':<10} | {'LATENCY':<10} | {'FPS':<10}")
+    print(f"{'STAGES':<8} | {'MODE':<10} | {'LATENCY':<10} | {'FPS':<10}| {'Power (W)':<10}")
     print("-" * 50)
     for r in FINAL_RESULTS:
         print(f"{r['Stages']:<8} | {r['Mode']:<10} | {r['Latency (ms)']:<10} | {r['Throughput (FPS)']:<10} | {r.get('Power (W)', 'N/A'):<10}")

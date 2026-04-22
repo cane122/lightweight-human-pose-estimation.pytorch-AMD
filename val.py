@@ -139,7 +139,8 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
         
         if i % 10 == 0:
             print(f"Processing image {i}/5000: {file_name}")
-        
+        if i % 100 == 0:
+            torch.cuda.empty_cache()
         avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, base_width, stride, quantization_type)
 
         total_keypoints_num = 0
