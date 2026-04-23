@@ -35,6 +35,17 @@ Quantization Choice: While FP32 performed respectably at 82.07 FPS, FP16 reached
 
 IR & Memory Optimization: Profiling the Intermediate Representation (IR) revealed six redundant PCIe copy operations. By optimizing the data flow to retain heatmaps and Part Affinity Fields (PAFs) in GPU memory, we significantly reduced overhead.
 
+```
+for refinement_stage in self.refinement_stages:
+            stages_output.extend(
+                refinement_stage(self.cat_op.cat([backbone_features, stages_output[-2], stages_output[-1]], dim=1)))
+
+final_results = [stages_output[-2], stages_output[-1]]
+return [self.dequant(out) for out in final_results]
+```
+
+In the above code we can see that for each refinement stage we are appending a new value for heatmaps and pafs to the output, but we only need the latest one, so we can optimize the code to only keep the latest and that optimisation saves about 50FPS.
+
 Kernel Tuning: We utilized MIOpen exhaustive search to tune convolution algorithms. By pre-selecting optimal tiling sizes and memory layouts for RDNA 3.5 Compute Units, we shaved an additional 1.5ms off the tail latency.
 
 ## Accuracy Analysis
