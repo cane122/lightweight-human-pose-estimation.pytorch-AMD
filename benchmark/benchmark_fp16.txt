@@ -1,5 +1,4 @@
 -------------------refinement 1------------------
-DONE (t=0.04s).
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.428
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.689
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.442
@@ -10,12 +9,7 @@ DONE (t=0.04s).
  Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.498
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.470
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.502
---- Evaluation Finished! ---
-
 -------------refinement 2----------------------
-
-Accumulating evaluation results...
-DONE (t=0.03s).
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.453
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.705
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.471
@@ -26,4 +20,14 @@ DONE (t=0.03s).
  Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.527
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.482
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.546
---- Evaluation Finished! ---
+-------------refinement 3--------------------------
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.456
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.699
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.473
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.465
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.459
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.510
+ Average Recall     (AR) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.738
+ Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.529
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.485
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.549

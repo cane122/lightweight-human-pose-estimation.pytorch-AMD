@@ -1,6 +1,4 @@
 ----------------- 1 refinement ----------------
-Accumulating evaluation results...
-DONE (t=0.04s).
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.409
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.669
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.421
@@ -11,11 +9,7 @@ DONE (t=0.04s).
  Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.475
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.449
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.478
---- Evaluation Finished! ---
 -----------------2 refinement------------------
-DONE (t=1.46s).
-Accumulating evaluation results...
-DONE (t=0.04s).
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets= 20 ] = 0.432
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets= 20 ] = 0.679
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.445
@@ -26,5 +20,3 @@ DONE (t=0.04s).
  Average Recall     (AR) @[ IoU=0.75      | area=   all | maxDets= 20 ] = 0.498
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets= 20 ] = 0.461
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets= 20 ] = 0.519
---- Evaluation Finished! ---
-(pose_env) ocankovic@L-EVOx22553
