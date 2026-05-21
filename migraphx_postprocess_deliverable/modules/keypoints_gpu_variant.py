@@ -1135,104 +1135,124 @@ def group_keypoints_numba(
 
     return pose_entries, all_keypoints
 
-def extract_keypoints_from_peak_mask(
-    heatmaps,
-    peak_mask,
-    max_candidates_per_part=None,
-    num_keypoint_types=18,
+def assemble_pose_entries_from_connections(
+    all_keypoints_by_type,
+    connections_by_part,
+    pose_entry_size=20,
 ):
-    """Convert a dense peak mask into OpenPose-style keypoint candidates.
+    """
+    CPU pose-entry assembly from precomputed limb connections.
+
+    This helper is intended for hybrid GPU/CPU post-processing experiments:
+    NMS and PAF affinity scoring can run on a GPU, while the small greedy
+    bipartite selection and final OpenPose-style pose assembly stay on CPU.
 
     Parameters
     ----------
-    heatmaps : np.ndarray
-        Heatmaps in either HWC or NCHW/NHWC batch format. Scores are read from
-        this tensor.
-    peak_mask : np.ndarray
-        Dense peak mask matching heatmaps spatially. Non-zero values are treated
-        as selected local maxima.
-    max_candidates_per_part : Optional[int]
-        If set, keep only the highest-scoring K candidates per keypoint type.
-        Use 20 for compatibility with the existing optimized extraction path.
-    num_keypoint_types : int
-        Number of human keypoint channels to convert. Defaults to 18, leaving
-        the background channel unused when C=19.
-
-    Returns
-    -------
-    tuple[list[list[tuple]], int]
-        Same candidate format as extract_keypoints_batch_cv2(): per-type lists
-        of (x, y, score, global_id), plus total candidate count.
+    all_keypoints_by_type : list[list[tuple]]
+        Per-keypoint-type list of (x, y, score, global_id).
+    connections_by_part : list[list[tuple]]
+        For every limb/body-part, a list of (global_kpt_a_id,
+        global_kpt_b_id, affinity_score).
+    pose_entry_size : int
+        OpenPose pose entry length. Default 20: 18 keypoints + score + count.
     """
     import numpy as np
 
-    heatmaps = np.asarray(heatmaps, dtype=np.float32)
-    peak_mask = np.asarray(peak_mask)
+    pose_entries = []
 
-    # Normalize common layouts to H x W x C.
-    if heatmaps.ndim == 4:
-        if heatmaps.shape[0] != 1:
-            raise ValueError(f"Expected batch size 1 for heatmaps, got {heatmaps.shape}")
-        # NCHW -> HWC when channel dimension is second.
-        if heatmaps.shape[1] <= 64:
-            heatmaps = np.moveaxis(heatmaps[0], 0, -1)
-        else:  # NHWC
-            heatmaps = heatmaps[0]
-    elif heatmaps.ndim != 3:
-        raise ValueError(f"Expected heatmaps as HWC or batched 4D tensor, got {heatmaps.shape}")
+    non_empty_keypoints = [
+        np.asarray(keypoints, dtype=np.float32)
+        for keypoints in all_keypoints_by_type
+        if len(keypoints) > 0
+    ]
 
-    if peak_mask.ndim == 4:
-        if peak_mask.shape[0] != 1:
-            raise ValueError(f"Expected batch size 1 for peak_mask, got {peak_mask.shape}")
-        if peak_mask.shape[1] <= 64:
-            peak_mask = np.moveaxis(peak_mask[0], 0, -1)
-        else:
-            peak_mask = peak_mask[0]
-    elif peak_mask.ndim != 3:
-        raise ValueError(f"Expected peak_mask as HWC or batched 4D tensor, got {peak_mask.shape}")
+    if non_empty_keypoints:
+        all_keypoints = np.concatenate(non_empty_keypoints, axis=0)
+    else:
+        return np.empty((0, pose_entry_size), dtype=np.float32), np.empty((0, 4), dtype=np.float32)
 
-    if heatmaps.shape[:2] != peak_mask.shape[:2]:
-        raise ValueError(
-            f"Spatial shape mismatch: heatmaps {heatmaps.shape}, peak_mask {peak_mask.shape}"
-        )
-
-    channels = min(int(num_keypoint_types), heatmaps.shape[2], peak_mask.shape[2])
-    all_keypoints_by_type = []
-    total_keypoints_num = 0
-
-    for kpt_idx in range(channels):
-        ys, xs = np.nonzero(peak_mask[:, :, kpt_idx] > 0)
-
-        if len(xs) == 0:
-            all_keypoints_by_type.append([])
+    for part_id, connections in enumerate(connections_by_part):
+        if len(connections) == 0:
             continue
 
-        scores = heatmaps[ys, xs, kpt_idx]
-        order = np.argsort(scores)[::-1]
+        if part_id == 0:
+            pose_entries = [
+                np.ones(pose_entry_size, dtype=np.float32) * -1
+                for _ in range(len(connections))
+            ]
 
-        if max_candidates_per_part is not None and len(order) > max_candidates_per_part:
-            order = order[:max_candidates_per_part]
+            for i, connection in enumerate(connections):
+                kpt_a_global_id = int(connection[0])
+                kpt_b_global_id = int(connection[1])
+                score = float(connection[2])
 
-        xs = xs[order]
-        ys = ys[order]
-        scores = scores[order]
-
-        keypoints = []
-        for i in range(len(xs)):
-            keypoints.append(
-                (
-                    int(xs[i]),
-                    int(ys[i]),
-                    float(scores[i]),
-                    total_keypoints_num + i,
+                pose_entries[i][BODY_PARTS_KPT_IDS[0][0]] = kpt_a_global_id
+                pose_entries[i][BODY_PARTS_KPT_IDS[0][1]] = kpt_b_global_id
+                pose_entries[i][-1] = 2
+                pose_entries[i][-2] = (
+                    np.sum(all_keypoints[[kpt_a_global_id, kpt_b_global_id], 2])
+                    + score
                 )
-            )
 
-        all_keypoints_by_type.append(keypoints)
-        total_keypoints_num += len(keypoints)
+        elif part_id == 17 or part_id == 18:
+            kpt_a_id = BODY_PARTS_KPT_IDS[part_id][0]
+            kpt_b_id = BODY_PARTS_KPT_IDS[part_id][1]
 
-    # Preserve the expected 18-list structure even if a smaller tensor is tested.
-    while len(all_keypoints_by_type) < int(num_keypoint_types):
-        all_keypoints_by_type.append([])
+            for connection in connections:
+                kpt_a_global_id = int(connection[0])
+                kpt_b_global_id = int(connection[1])
 
-    return all_keypoints_by_type, total_keypoints_num
+                for pose_entry in pose_entries:
+                    if (
+                        pose_entry[kpt_a_id] == kpt_a_global_id
+                        and pose_entry[kpt_b_id] == -1
+                    ):
+                        pose_entry[kpt_b_id] = kpt_b_global_id
+
+                    elif (
+                        pose_entry[kpt_b_id] == kpt_b_global_id
+                        and pose_entry[kpt_a_id] == -1
+                    ):
+                        pose_entry[kpt_a_id] = kpt_a_global_id
+
+        else:
+            kpt_a_id = BODY_PARTS_KPT_IDS[part_id][0]
+            kpt_b_id = BODY_PARTS_KPT_IDS[part_id][1]
+
+            for connection in connections:
+                kpt_a_global_id = int(connection[0])
+                kpt_b_global_id = int(connection[1])
+                score = float(connection[2])
+
+                num_attached = 0
+
+                for pose_entry in pose_entries:
+                    if pose_entry[kpt_a_id] == kpt_a_global_id:
+                        pose_entry[kpt_b_id] = kpt_b_global_id
+                        pose_entry[-1] += 1
+                        pose_entry[-2] += all_keypoints[kpt_b_global_id, 2] + score
+                        num_attached += 1
+
+                if num_attached == 0:
+                    pose_entry = np.ones(pose_entry_size, dtype=np.float32) * -1
+                    pose_entry[kpt_a_id] = kpt_a_global_id
+                    pose_entry[kpt_b_id] = kpt_b_global_id
+                    pose_entry[-1] = 2
+                    pose_entry[-2] = (
+                        np.sum(all_keypoints[[kpt_a_global_id, kpt_b_global_id], 2])
+                        + score
+                    )
+                    pose_entries.append(pose_entry)
+
+    filtered_entries = []
+
+    for pose_entry in pose_entries:
+        if pose_entry[-1] < 3:
+            continue
+        if pose_entry[-2] / pose_entry[-1] < 0.2:
+            continue
+        filtered_entries.append(pose_entry)
+
+    pose_entries = np.asarray(filtered_entries, dtype=np.float32)
+    return pose_entries, all_keypoints
